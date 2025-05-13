@@ -55,9 +55,13 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-nextjs-${{ hashFiles('**/package-lock.json') }}-
       - name: Install dependencies
-        run: npm ci
+        run: |
+          npm ci
+          npm install @next/swc-linux-x64-gnu
       - name: Build with Next.js
-        run: npm run build
+        run: |
+          export NEXT_TELEMETRY_DISABLED=1
+          npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:

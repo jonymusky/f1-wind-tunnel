@@ -1,40 +1,35 @@
-import type { Metadata } from 'next'
-import { Orbitron, JetBrains_Mono, Inter } from 'next/font/google'
-import './globals.css'
-
-const orbitron = Orbitron({
-  subsets: ['latin'],
-  variable: '--font-orbitron',
-  display: 'swap',
-})
-
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  variable: '--font-mono',
-  display: 'swap',
-})
+import type { Metadata, Viewport } from "next"
+import { Inter, JetBrains_Mono } from "next/font/google"
+import "./globals.css"
 
 const inter = Inter({
-  subsets: ['latin'],
-  variable: '--font-inter',
-  display: 'swap',
+  subsets: ["latin"],
+  variable: "--font-inter",
+  display: "swap",
+})
+
+const jetbrains = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains",
+  display: "swap",
 })
 
 export const metadata: Metadata = {
-  title: 'F1 AEROSIM | Wind Tunnel Simulator',
-  description: 'Experience the precision of Formula 1 aerodynamics. Visualize airflow, optimize downforce, and master the science of speed.',
+  title: "F1 Wind Tunnel — AeroSim",
+  description:
+    "Interactive F1 wind tunnel: tune wings, ride height, rake and yaw, and watch streamlines, smoke and surface pressure respond in real time.",
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export const viewport: Viewport = {
+  themeColor: "#0b0c0f",
+  width: "device-width",
+  initialScale: 1,
+}
+
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className="dark">
-      <body className={`${orbitron.variable} ${jetbrainsMono.variable} ${inter.variable} antialiased`}>
-        {children}
-      </body>
+    <html lang="en">
+      <body className={`${inter.variable} ${jetbrains.variable} font-sans antialiased`}>{children}</body>
     </html>
   )
 }

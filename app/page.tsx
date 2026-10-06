@@ -2,15 +2,11 @@
 
 import dynamic from "next/dynamic"
 
-const WindTunnelSimulator = dynamic(
-  () => import("@/components/wind-tunnel-simulator"),
-  { ssr: false }
-)
+const WindTunnelSimulator = dynamic(() => import("@/components/wind-tunnel-simulator"), {
+  ssr: false,
+  loading: () => <div className="h-dvh w-full bg-bg" />,
+})
 
 export default function Home() {
-  return (
-    <div className="min-h-screen bg-[#050505]">
-      <WindTunnelSimulator />
-    </div>
-  )
+  return <WindTunnelSimulator />
 }

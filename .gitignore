@@ -62,3 +62,4 @@ lerna-debug.log*
 .env.local 
 
 .next
+out/

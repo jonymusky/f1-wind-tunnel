@@ -1,493 +1,461 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { motion, AnimatePresence } from "framer-motion"
+import { AlertTriangle, ChevronLeft, RotateCcw } from "lucide-react"
 import { Slider } from "@/components/ui/slider"
-import {
-  Wind,
-  ArrowDown,
-  ArrowUp,
-  Gauge,
-  Maximize2,
-  Minimize2,
-  Play,
-  Pause,
-  Activity,
-  ChevronDown,
-  ChevronUp,
-  Zap,
-  Settings2
-} from "lucide-react"
+import { cn } from "@/lib/utils"
+import { toKgf, type AeroConfig, type AeroResult } from "@/lib/aero"
+import { SPEED_RANGE, turbo } from "@/lib/flow-field"
+import { CP_RANGE } from "@/components/sim/materials"
+import type { FlowMode } from "@/components/sim/flow"
+import { PART_BY_ID, PARTS, type PartId } from "@/lib/parts"
 
-interface ControlPanelProps {
-  config: {
-    windSpeed: number
-    angleOfAttack: number
-    frontWing: number
-    rearWing: number
-    sidepods: number
-    drsEnabled: boolean
-  }
-  setConfig: (config: ControlPanelProps['config']) => void
-  downforce: number
-  drag: number
-  efficiency: number
-  isMobile: boolean
-  onToggleSimulation: () => void
-  isSimulating: boolean
+export interface VisualSettings {
+  flow: FlowMode
+  pressure: boolean
+  smokeX: number
 }
 
-// Telemetry gauge component
-const TelemetryGauge = ({
+/* ---------- primitives ---------- */
+
+export function Segmented<T extends string>({
   value,
-  max,
-  label,
-  unit,
-  color,
-  icon: Icon
+  options,
+  onChange,
+  className,
+  size = "md",
 }: {
-  value: number
-  max: number
-  label: string
-  unit: string
-  color: 'red' | 'cyan' | 'green' | 'amber'
-  icon: React.ElementType
-}) => {
-  const percentage = Math.min((value / max) * 100, 100)
-  const colorMap = {
-    red: {
-      text: 'text-[#e10600]',
-      bg: 'bg-[#e10600]',
-      glow: 'shadow-[0_0_15px_rgba(225,6,0,0.5)]',
-      gradient: 'from-[#e10600] to-[#8b0000]'
-    },
-    cyan: {
-      text: 'text-[#00d4ff]',
-      bg: 'bg-[#00d4ff]',
-      glow: 'shadow-[0_0_15px_rgba(0,212,255,0.5)]',
-      gradient: 'from-[#00d4ff] to-[#0088aa]'
-    },
-    green: {
-      text: 'text-[#00ff88]',
-      bg: 'bg-[#00ff88]',
-      glow: 'shadow-[0_0_15px_rgba(0,255,136,0.5)]',
-      gradient: 'from-[#00ff88] to-[#00aa55]'
-    },
-    amber: {
-      text: 'text-[#ff8c00]',
-      bg: 'bg-[#ff8c00]',
-      glow: 'shadow-[0_0_15px_rgba(255,140,0,0.5)]',
-      gradient: 'from-[#ff8c00] to-[#cc6600]'
-    }
-  }
-
-  const colors = colorMap[color]
-
+  value: T
+  options: { value: T; label: string }[]
+  onChange: (v: T) => void
+  className?: string
+  size?: "sm" | "md"
+}) {
   return (
-    <div className="hud-border rounded-lg p-4 relative overflow-hidden group hover:border-[#3a3a3a] transition-colors">
-      {/* Background glow effect */}
-      <div
-        className={`absolute inset-0 opacity-0 group-hover:opacity-10 transition-opacity ${colors.bg}`}
-        style={{ filter: 'blur(20px)' }}
-      />
-
-      <div className="relative z-10">
-        {/* Header */}
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <Icon className={`w-4 h-4 ${colors.text}`} />
-            <span className="text-[10px] uppercase tracking-[0.2em] text-[#555] font-display">
-              {label}
-            </span>
-          </div>
-        </div>
-
-        {/* Value display */}
-        <div className="flex items-baseline gap-1 mb-3">
-          <motion.span
-            key={value}
-            initial={{ opacity: 0.5, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className={`text-3xl font-telemetry font-bold ${colors.text}`}
-            style={{
-              textShadow: color === 'cyan' ? '0 0 10px rgba(0,212,255,0.5)' :
-                          color === 'red' ? '0 0 10px rgba(225,6,0,0.5)' :
-                          color === 'green' ? '0 0 10px rgba(0,255,136,0.5)' :
-                          '0 0 10px rgba(255,140,0,0.5)'
-            }}
-          >
-            {value}
-          </motion.span>
-          <span className="text-sm text-[#555] font-telemetry">{unit}</span>
-        </div>
-
-        {/* Progress bar */}
-        <div className="relative h-1 bg-[#1a1a1a] rounded-full overflow-hidden">
-          <motion.div
-            className={`absolute inset-y-0 left-0 rounded-full bg-gradient-to-r ${colors.gradient}`}
-            initial={{ width: 0 }}
-            animate={{ width: `${percentage}%` }}
-            transition={{ duration: 0.5, ease: "easeOut" }}
-          />
-          {/* Animated glow */}
-          <motion.div
-            className={`absolute inset-y-0 w-4 ${colors.bg} opacity-50`}
-            animate={{
-              left: ['0%', `${percentage}%`],
-              opacity: [0, 0.8, 0]
-            }}
-            transition={{
-              duration: 1.5,
-              repeat: Infinity,
-              ease: "easeInOut"
-            }}
-            style={{ filter: 'blur(4px)' }}
-          />
-        </div>
-      </div>
+    <div role="radiogroup" className={cn("flex rounded-lg border border-line bg-black/30 p-0.5", className)}>
+      {options.map((o) => (
+        <button
+          key={o.value}
+          role="radio"
+          aria-checked={value === o.value}
+          onClick={() => onChange(o.value)}
+          className={cn(
+            "flex-1 whitespace-nowrap rounded-md font-medium transition-colors",
+            size === "sm" ? "px-2 py-1 text-[11px]" : "px-2.5 py-1.5 text-xs",
+            value === o.value ? "bg-white/10 text-ink shadow-[inset_0_0_0_1px_rgba(255,255,255,0.06)]" : "text-ink-3 hover:text-ink-2",
+          )}
+        >
+          {o.label}
+        </button>
+      ))}
     </div>
   )
 }
 
-// Parameter slider component
-const ParameterSlider = ({
+function Param({
   label,
+  hint,
   value,
+  display,
+  unit,
   min,
   max,
   step,
-  unit,
   onChange,
-  icon: Icon,
-  color = 'cyan'
 }: {
   label: string
+  hint?: string
   value: number
+  display?: string
+  unit: string
   min: number
   max: number
   step: number
-  unit: string
-  onChange: (value: number[]) => void
-  icon: React.ElementType
-  color?: 'cyan' | 'red'
-}) => {
-  const colorClasses = color === 'cyan'
-    ? 'text-[#00d4ff]'
-    : 'text-[#e10600]'
-
+  onChange: (v: number) => void
+}) {
   return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Icon className={`w-4 h-4 ${colorClasses}`} />
-          <span className="text-xs uppercase tracking-[0.15em] text-[#888] font-display">
-            {label}
-          </span>
-        </div>
-        <div className="flex items-baseline gap-1 px-3 py-1 bg-[#1a1a1a] rounded">
-          <span className={`font-telemetry text-sm font-bold ${colorClasses}`}>
-            {value}
-          </span>
-          <span className="text-[10px] text-[#555] font-telemetry">{unit}</span>
-        </div>
+    <div className="space-y-1.5">
+      <div className="flex items-baseline justify-between gap-2">
+        <label className="text-[12.5px] text-ink-2" title={hint}>
+          {label}
+        </label>
+        <span className="tabular text-[12.5px] text-ink">
+          {display ?? value}
+          <span className="ml-1 text-ink-3">{unit}</span>
+        </span>
       </div>
-
-      <div className="relative">
-        <Slider
-          value={[value]}
-          min={min}
-          max={max}
-          step={step}
-          onValueChange={onChange}
-          className="w-full"
-        />
-        {/* Track marks */}
-        <div className="flex justify-between mt-1 px-1">
-          <span className="text-[8px] text-[#333] font-telemetry">{min}</span>
-          <span className="text-[8px] text-[#333] font-telemetry">{max}</span>
-        </div>
-      </div>
+      <Slider value={[value]} min={min} max={max} step={step} onValueChange={(v) => onChange(v[0])} aria-label={label} />
     </div>
   )
 }
 
-export default function ControlPanel({
-  config,
-  setConfig,
-  downforce,
-  drag,
-  efficiency,
-  isMobile,
-  onToggleSimulation,
-  isSimulating,
-}: ControlPanelProps) {
-  const [expanded, setExpanded] = useState(!isMobile)
-  const [activeTab, setActiveTab] = useState<'primary' | 'advanced'>('primary')
-
-  const handleWindSpeedChange = (value: number[]) => {
-    setConfig({ ...config, windSpeed: value[0] })
-  }
-
-  const handleAngleChange = (value: number[]) => {
-    setConfig({ ...config, angleOfAttack: value[0] })
-  }
-
-  const handleFrontWingChange = (value: number[]) => {
-    setConfig({ ...config, frontWing: value[0] })
-  }
-
-  const handleRearWingChange = (value: number[]) => {
-    setConfig({ ...config, rearWing: value[0] })
-  }
-
-  const handleSidepodsChange = (value: number[]) => {
-    setConfig({ ...config, sidepods: value[0] })
-  }
-
+function Section({ title, children, aside }: { title: string; children: React.ReactNode; aside?: React.ReactNode }) {
   return (
-    <motion.div
-      className="bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a]/95 to-transparent backdrop-blur-md"
-    >
-      {/* Top accent line */}
-      <div className="h-[1px] bg-gradient-to-r from-transparent via-[#e10600] to-transparent" />
-
-      <div className="p-4 md:p-6">
-        {/* Header bar */}
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-4">
-            {/* Simulation control button */}
-            <motion.button
-              onClick={onToggleSimulation}
-              className={`flex items-center gap-3 px-6 py-3 rounded font-display text-sm uppercase tracking-wider transition-all ${
-                isSimulating
-                  ? 'bg-[#1a1a1a] text-[#888] border border-[#333] hover:border-[#555]'
-                  : 'bg-[#e10600] text-white hover:shadow-[0_0_30px_rgba(225,6,0,0.4)]'
-              }`}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              {isSimulating ? (
-                <>
-                  <Pause className="w-4 h-4" />
-                  <span>Pause</span>
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  <span>Start</span>
-                </>
-              )}
-            </motion.button>
-
-            {/* Status */}
-            <div className="hidden md:flex items-center gap-2">
-              <div className={`w-2 h-2 rounded-full ${isSimulating ? 'bg-[#00ff88] animate-pulse' : 'bg-[#e10600]'}`} />
-              <span className="text-xs text-[#555] font-telemetry uppercase">
-                {isSimulating ? 'Simulation Active' : 'Simulation Paused'}
-              </span>
-            </div>
-          </div>
-
-          {/* Expand/collapse */}
-          <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-2 px-3 py-2 rounded text-[#555] hover:text-white hover:bg-[#1a1a1a] transition-colors"
-          >
-            <span className="text-xs font-display uppercase tracking-wider hidden md:block">
-              {expanded ? 'Collapse' : 'Expand'}
-            </span>
-            {expanded ? (
-              <ChevronDown className="w-4 h-4" />
-            ) : (
-              <ChevronUp className="w-4 h-4" />
-            )}
-          </button>
-        </div>
-
-        <AnimatePresence>
-          {expanded && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.3 }}
-            >
-              {/* Tab selector */}
-              <div className="flex gap-1 mb-6 p-1 bg-[#0a0a0a] rounded-lg inline-flex">
-                <button
-                  onClick={() => setActiveTab('primary')}
-                  className={`px-4 py-2 rounded text-xs font-display uppercase tracking-wider transition-all ${
-                    activeTab === 'primary'
-                      ? 'bg-[#e10600] text-white'
-                      : 'text-[#555] hover:text-white'
-                  }`}
-                >
-                  Primary
-                </button>
-                <button
-                  onClick={() => setActiveTab('advanced')}
-                  className={`px-4 py-2 rounded text-xs font-display uppercase tracking-wider transition-all ${
-                    activeTab === 'advanced'
-                      ? 'bg-[#e10600] text-white'
-                      : 'text-[#555] hover:text-white'
-                  }`}
-                >
-                  Advanced
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                {/* Controls section */}
-                <div className="lg:col-span-7">
-                  <AnimatePresence mode="wait">
-                    {activeTab === 'primary' ? (
-                      <motion.div
-                        key="primary"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="grid grid-cols-1 md:grid-cols-2 gap-6"
-                      >
-                        <div className="hud-border rounded-lg p-4">
-                          <ParameterSlider
-                            label="Wind Speed"
-                            value={config.windSpeed}
-                            min={0}
-                            max={320}
-                            step={5}
-                            unit="km/h"
-                            onChange={handleWindSpeedChange}
-                            icon={Wind}
-                            color="cyan"
-                          />
-                        </div>
-
-                        <div className="hud-border rounded-lg p-4">
-                          <ParameterSlider
-                            label="Angle of Attack"
-                            value={config.angleOfAttack}
-                            min={-10}
-                            max={10}
-                            step={0.5}
-                            unit="deg"
-                            onChange={handleAngleChange}
-                            icon={ArrowUp}
-                            color="red"
-                          />
-                        </div>
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="advanced"
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        exit={{ opacity: 0, x: 20 }}
-                        className="grid grid-cols-1 md:grid-cols-3 gap-4"
-                      >
-                        <div className="hud-border rounded-lg p-4">
-                          <ParameterSlider
-                            label="Front Wing"
-                            value={config.frontWing}
-                            min={0}
-                            max={100}
-                            step={1}
-                            unit="%"
-                            onChange={handleFrontWingChange}
-                            icon={Settings2}
-                            color="cyan"
-                          />
-                        </div>
-
-                        <div className="hud-border rounded-lg p-4">
-                          <ParameterSlider
-                            label="Rear Wing"
-                            value={config.rearWing}
-                            min={0}
-                            max={100}
-                            step={1}
-                            unit="%"
-                            onChange={handleRearWingChange}
-                            icon={Settings2}
-                            color="cyan"
-                          />
-                        </div>
-
-                        <div className="hud-border rounded-lg p-4">
-                          <ParameterSlider
-                            label="Sidepods"
-                            value={config.sidepods}
-                            min={0}
-                            max={100}
-                            step={1}
-                            unit="%"
-                            onChange={handleSidepodsChange}
-                            icon={Settings2}
-                            color="cyan"
-                          />
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </div>
-
-                {/* Telemetry section */}
-                <div className="lg:col-span-5">
-                  <div className="grid grid-cols-3 gap-3">
-                    <TelemetryGauge
-                      value={downforce}
-                      max={1000}
-                      label="Downforce"
-                      unit="kg"
-                      color="green"
-                      icon={ArrowDown}
-                    />
-
-                    <TelemetryGauge
-                      value={drag}
-                      max={500}
-                      label="Drag"
-                      unit="kg"
-                      color="red"
-                      icon={Wind}
-                    />
-
-                    <TelemetryGauge
-                      value={efficiency}
-                      max={5}
-                      label="L/D Ratio"
-                      unit=":1"
-                      color="cyan"
-                      icon={Activity}
-                    />
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* Collapsed mini-display */}
-        {!expanded && (
-          <div className="flex items-center justify-center gap-8">
-            <div className="flex items-center gap-2">
-              <ArrowDown className="w-4 h-4 text-[#00ff88]" />
-              <span className="font-telemetry text-sm text-[#00ff88]">{downforce}</span>
-              <span className="text-[10px] text-[#555]">kg</span>
-            </div>
-            <div className="w-[1px] h-4 bg-[#333]" />
-            <div className="flex items-center gap-2">
-              <Wind className="w-4 h-4 text-[#e10600]" />
-              <span className="font-telemetry text-sm text-[#e10600]">{drag}</span>
-              <span className="text-[10px] text-[#555]">kg</span>
-            </div>
-            <div className="w-[1px] h-4 bg-[#333]" />
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-[#00d4ff]" />
-              <span className="font-telemetry text-sm text-[#00d4ff]">{efficiency}:1</span>
-            </div>
-          </div>
-        )}
+    <section className="space-y-3.5 border-t border-line px-4 py-4 first:border-t-0">
+      <div className="flex items-center justify-between">
+        <h3 className="label-xs">{title}</h3>
+        {aside}
       </div>
-    </motion.div>
+      {children}
+    </section>
+  )
+}
+
+/* ---------- setup ---------- */
+
+export function SetupPanel({
+  config,
+  onChange,
+  onReset,
+  visual,
+  onVisualChange,
+}: {
+  config: AeroConfig
+  onChange: (patch: Partial<AeroConfig>) => void
+  onReset: () => void
+  visual: VisualSettings
+  onVisualChange: (patch: Partial<VisualSettings>) => void
+}) {
+  return (
+    <div>
+      <Section
+        title="Tunnel"
+        aside={
+          <button onClick={onReset} className="flex items-center gap-1 text-[11px] text-ink-3 hover:text-ink-2">
+            <RotateCcw className="size-3" /> Reset
+          </button>
+        }
+      >
+        <Param label="Air speed" value={config.speed} unit="km/h" min={50} max={350} step={5} onChange={(v) => onChange({ speed: v })} />
+        <Param
+          label="Yaw"
+          hint="Turntable angle — simulates crosswind or a car sliding through a corner"
+          value={config.yaw}
+          display={config.yaw.toFixed(1)}
+          unit="°"
+          min={-8}
+          max={8}
+          step={0.5}
+          onChange={(v) => onChange({ yaw: v })}
+        />
+      </Section>
+
+      <Section title="Car setup">
+        <Param
+          label="Front wing flap"
+          value={config.frontWing}
+          unit="°"
+          min={4}
+          max={30}
+          step={1}
+          onChange={(v) => onChange({ frontWing: v })}
+        />
+        <Param
+          label="Rear wing angle"
+          value={config.rearWing}
+          unit="°"
+          min={6}
+          max={36}
+          step={1}
+          onChange={(v) => onChange({ rearWing: v })}
+        />
+        <Param
+          label="Ride height"
+          hint="Floor height above the road. Lower = more ground effect, until the floor stalls"
+          value={config.rideHeight}
+          unit="mm"
+          min={14}
+          max={80}
+          step={1}
+          onChange={(v) => onChange({ rideHeight: v })}
+        />
+        <Param
+          label="Rake"
+          hint="Rear higher than front"
+          value={config.rake}
+          display={config.rake.toFixed(1)}
+          unit="°"
+          min={-0.5}
+          max={2}
+          step={0.1}
+          onChange={(v) => onChange({ rake: v })}
+        />
+        <div className="space-y-1.5">
+          <div className="flex items-baseline justify-between">
+            <span className="text-[12.5px] text-ink-2">Active aero</span>
+            <span className="text-[11px] text-ink-3">{config.mode === "straight" ? "flaps open" : "full load"}</span>
+          </div>
+          <Segmented
+            value={config.mode}
+            onChange={(mode) => onChange({ mode })}
+            options={[
+              { value: "corner", label: "Corner mode" },
+              { value: "straight", label: "Straight mode" },
+            ]}
+          />
+        </div>
+      </Section>
+
+      <Section title="Visualisation">
+        <Segmented
+          value={visual.flow}
+          onChange={(flow) => onVisualChange({ flow })}
+          options={[
+            { value: "streamlines", label: "Streamlines" },
+            { value: "smoke", label: "Smoke wand" },
+            { value: "off", label: "Off" },
+          ]}
+        />
+        {visual.flow === "smoke" && (
+          <Param
+            label="Wand position"
+            value={visual.smokeX}
+            display={(visual.smokeX * 100).toFixed(0)}
+            unit="cm"
+            min={-1}
+            max={1}
+            step={0.02}
+            onChange={(v) => onVisualChange({ smokeX: v })}
+          />
+        )}
+        <label className="flex cursor-pointer items-center justify-between">
+          <span className="text-[12.5px] text-ink-2">Surface pressure (Cp)</span>
+          <button
+            role="switch"
+            aria-checked={visual.pressure}
+            onClick={() => onVisualChange({ pressure: !visual.pressure })}
+            className={cn(
+              "relative h-5 w-9 rounded-full border transition-colors",
+              visual.pressure ? "border-transparent bg-ink-2" : "border-line-strong bg-black/30",
+            )}
+          >
+            <span
+              className={cn(
+                "absolute top-0.5 left-0.5 size-3.5 rounded-full transition-transform",
+                visual.pressure ? "translate-x-4 bg-bg" : "bg-ink-3",
+              )}
+            />
+          </button>
+        </label>
+      </Section>
+    </div>
+  )
+}
+
+/* ---------- telemetry ---------- */
+
+function Readout({ label, value, unit, sub }: { label: string; value: string; unit?: string; sub?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="label-xs">{label}</div>
+      <div className="mt-1.5 flex items-baseline gap-1">
+        <span className="tabular text-[19px] leading-none font-medium text-ink">{value}</span>
+        {unit && <span className="tabular text-[11px] text-ink-3">{unit}</span>}
+      </div>
+      {sub && <div className="tabular mt-1 text-[11px] leading-snug text-ink-3">{sub}</div>}
+    </div>
+  )
+}
+
+const fmt = (n: number, d = 0) => n.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d })
+
+export function TelemetryPanel({ aero, config }: { aero: AeroResult; config: AeroConfig }) {
+  const front = aero.frontBalance * 100
+  return (
+    <div className="space-y-4 p-4">
+      <div className="flex items-end justify-between gap-4">
+        <div>
+          <div className="label-xs">Downforce</div>
+          <div className="mt-1.5 flex items-baseline gap-1.5">
+            <span className="tabular text-[34px] leading-none font-medium tracking-tight text-ink">{fmt(toKgf(aero.downforce))}</span>
+            <span className="tabular text-xs text-ink-3">kgf</span>
+          </div>
+        </div>
+        <div className="text-right">
+          <div className="tabular text-[11px] text-ink-3">{fmt(aero.downforce / 1000, 1)} kN</div>
+          <div className="tabular text-[11px] text-ink-3">{fmt(aero.downforceToWeight, 2)}× car weight</div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-x-4 gap-y-4">
+        <Readout label="Drag" value={fmt(toKgf(aero.drag))} unit="kgf" sub={`${fmt(aero.dragPower)} kW`} />
+        <Readout label="L/D" value={fmt(aero.liftToDrag, 2)} sub={`CL ${fmt(aero.cl, 2)} · CD ${fmt(aero.cd, 2)}`} />
+        <Readout label="Side force" value={fmt(toKgf(Math.abs(aero.sideForce)))} unit="kgf" sub={config.yaw === 0 ? "no yaw" : `${config.yaw > 0 ? "right" : "left"}`} />
+      </div>
+
+      <div>
+        <div className="flex items-baseline justify-between">
+          <span className="label-xs">Aero balance</span>
+          <span className="tabular text-[12px] text-ink">
+            {fmt(front, 1)}% <span className="text-ink-3">front</span>
+          </span>
+        </div>
+        <div className="relative mt-2 h-1.5 rounded-full bg-line-strong">
+          {/* Typical working window */}
+          <div className="absolute inset-y-0 rounded-full bg-white/12" style={{ left: "40%", width: "7%" }} />
+          <div
+            className="absolute top-1/2 h-3 w-[3px] -translate-x-1/2 -translate-y-1/2 rounded-full bg-ink transition-[left] duration-300"
+            style={{ left: `${Math.min(70, Math.max(25, front))}%` }}
+          />
+        </div>
+        <div className="tabular mt-1 flex justify-between text-[10px] text-ink-3">
+          <span>rear</span>
+          <span>window 40–47%</span>
+          <span>front</span>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-3 gap-x-4 border-t border-line pt-3">
+        <Readout label="Floor" value={fmt(aero.clA.floor, 2)} unit="m²" />
+        <Readout label="Front wing" value={fmt(aero.clA.frontWing, 2)} unit="m²" />
+        <Readout label="Rear wing" value={fmt(aero.clA.rearWing, 2)} unit="m²" />
+      </div>
+      <p className="text-[11px] leading-snug text-ink-3">
+        CL·A by component · CD·A {fmt(aero.cdA, 2)} m². Downforce exceeds weight above{" "}
+        <span className="tabular text-ink-2">{fmt(aero.invertedSpeed)} km/h</span> — fast enough to drive on the ceiling.
+      </p>
+
+      {aero.floorStall && (
+        <div className="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-2.5 py-2 text-[11.5px] text-warn">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" />
+          <span>Floor stalled below 24 mm — diffuser flow separates. On track this is porpoising.</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* ---------- legend ---------- */
+
+function gradient(steps = 12) {
+  const stops: string[] = []
+  const rgb: [number, number, number] = [0, 0, 0]
+  for (let i = 0; i <= steps; i++) {
+    turbo(i / steps, rgb)
+    stops.push(`rgb(${Math.round(rgb[0] * 255)} ${Math.round(rgb[1] * 255)} ${Math.round(rgb[2] * 255)}) ${((i / steps) * 100).toFixed(0)}%`)
+  }
+  return `linear-gradient(90deg, ${stops.join(",")})`
+}
+const GRADIENT = gradient()
+
+export function Legend({ visual }: { visual: VisualSettings }) {
+  const items: { title: string; lo: string; mid: string; hi: string; loLabel: string; hiLabel: string }[] = []
+  if (visual.flow === "streamlines") {
+    items.push({
+      title: "Local velocity  V / V∞",
+      lo: SPEED_RANGE[0].toFixed(1),
+      mid: "1.0",
+      hi: SPEED_RANGE[1].toFixed(1),
+      loLabel: "slower",
+      hiLabel: "faster",
+    })
+  }
+  if (visual.pressure) {
+    items.push({
+      title: "Surface pressure  Cp",
+      lo: CP_RANGE[0].toFixed(1),
+      mid: "0",
+      hi: `+${CP_RANGE[1].toFixed(1)}`,
+      loLabel: "suction",
+      hiLabel: "stagnation",
+    })
+  }
+  if (!items.length) return null
+  return (
+    <div className="panel space-y-3 px-3.5 py-3">
+      {items.map((it) => {
+        const midPct =
+          it.title.startsWith("Local")
+            ? ((1 - SPEED_RANGE[0]) / (SPEED_RANGE[1] - SPEED_RANGE[0])) * 100
+            : ((0 - CP_RANGE[0]) / (CP_RANGE[1] - CP_RANGE[0])) * 100
+        return (
+          <div key={it.title} className="w-56">
+            <div className="label-xs normal-case tracking-normal">{it.title}</div>
+            <div className="mt-2 h-2 rounded-sm" style={{ background: GRADIENT }} />
+            <div className="tabular relative mt-1 h-3 text-[10px] text-ink-3">
+              <span className="absolute left-0">{it.lo}</span>
+              <span className="absolute -translate-x-1/2" style={{ left: `${midPct}%` }}>
+                {it.mid}
+              </span>
+              <span className="absolute right-0">{it.hi}</span>
+            </div>
+            <div className="flex justify-between text-[10px] text-ink-3">
+              <span>{it.loLabel}</span>
+              <span>{it.hiLabel}</span>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
+/* ---------- exploded view: components ---------- */
+
+export function PartsPanel({
+  aero,
+  config,
+  selected,
+  hovered,
+  onSelect,
+  onHover,
+}: {
+  aero: AeroResult
+  config: AeroConfig
+  selected: PartId | null
+  hovered: PartId | null
+  onSelect: (id: PartId | null) => void
+  onHover: (id: PartId | null) => void
+}) {
+  const part = selected ? PART_BY_ID[selected] : null
+  return (
+    <div>
+      {part ? (
+        <div className="space-y-3 border-b border-line px-4 py-4">
+          <button onClick={() => onSelect(null)} className="flex items-center gap-1 text-[11px] text-ink-3 hover:text-ink-2">
+            <ChevronLeft className="size-3" /> All components
+          </button>
+          <div>
+            <div className="label-xs text-accent!">{String(PARTS.indexOf(part) + 1).padStart(2, "0")}</div>
+            <h3 className="mt-1.5 text-[17px] font-semibold tracking-tight">{part.name}</h3>
+            <div className="mt-0.5 text-[12.5px] text-ink-2">{part.role}</div>
+          </div>
+          <p className="text-[13px] leading-relaxed text-ink-2">{part.body}</p>
+          {part.live && (
+            <div className="rounded-md border border-line bg-black/25 px-3 py-2">
+              <div className="label-xs">Live, current setup</div>
+              <div className="tabular mt-1.5 text-[12px] leading-snug text-ink">{part.live(aero, config)}</div>
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="border-b border-line px-4 py-4">
+          <h3 className="label-xs">Components</h3>
+          <p className="mt-2 text-[12.5px] leading-snug text-ink-2">
+            Pick a part, here or on the car, to see what it does. Drag the slider to take the car apart.
+          </p>
+        </div>
+      )}
+      <ol className="py-1.5">
+        {PARTS.map((p, i) => (
+          <li key={p.id}>
+            <button
+              onClick={() => onSelect(selected === p.id ? null : p.id)}
+              onPointerEnter={() => onHover(p.id)}
+              onPointerLeave={() => onHover(null)}
+              className={cn(
+                "flex w-full items-baseline gap-3 px-4 py-1.5 text-left transition-colors",
+                selected === p.id ? "bg-white/8" : hovered === p.id ? "bg-white/4" : "",
+              )}
+            >
+              <span className="tabular w-5 shrink-0 text-[11px] text-ink-3">{String(i + 1).padStart(2, "0")}</span>
+              <span className="min-w-0">
+                <span className={cn("block text-[13px]", selected === p.id ? "text-ink" : "text-ink-2")}>{p.name}</span>
+                <span className="block truncate text-[11.5px] text-ink-3">{p.role}</span>
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </div>
   )
 }

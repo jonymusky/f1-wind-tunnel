@@ -1,18 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'export',
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
-  typescript: {
-    ignoreBuildErrors: true,
-  },
+  // Static export for GitHub Pages (custom domain, so no basePath)
+  output: "export",
+  trailingSlash: true,
   images: {
     unoptimized: true,
   },
-  assetPrefix: '',
-  basePath: '',
-  trailingSlash: true,
 }
 
 export default nextConfig

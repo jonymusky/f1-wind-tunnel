@@ -8,6 +8,7 @@ import { turbo } from "@/lib/flow-field"
 import { G } from "@/lib/aero"
 import { formatLap, type CarSpec, type LapResult, type Limit, type StraightAero, type TrackGeometry, type Tyre } from "@/lib/lap/sim"
 import { TRACKS, type TrackInfo } from "@/lib/tracks"
+import type { Livery } from "@/lib/liveries"
 import { cn } from "@/lib/utils"
 
 export type ColorBy = "speed" | "limit"
@@ -49,6 +50,10 @@ export function TrackStage({
   rate,
   colorBy,
   compact,
+  livery,
+  onTrack,
+  onColorBy,
+  onRate,
 }: {
   track: TrackGeometry | null
   lap: LapResult | null
@@ -58,15 +63,19 @@ export function TrackStage({
   rate: number
   colorBy: ColorBy
   compact: boolean
+  livery: Livery
+  onTrack: (id: string) => void
+  onColorBy: (c: ColorBy) => void
+  onRate: (r: number) => void
 }) {
   const mapRef = useRef<HTMLCanvasElement>(null)
   const traceRef = useRef<HTMLCanvasElement>(null)
   const hud = useRef<Record<string, HTMLElement | null>>({})
   // The animation reads everything through this ref, so React never re-renders per frame
-  const live = useRef({ track, lap, baseline, running, rate, colorBy, pos: 0, dirty: true })
+  const live = useRef({ track, lap, baseline, running, rate, colorBy, livery, pos: 0, dirty: true })
   useEffect(() => {
-    Object.assign(live.current, { track, lap, baseline, running, rate, colorBy, dirty: true })
-  }, [track, lap, baseline, running, rate, colorBy])
+    Object.assign(live.current, { track, lap, baseline, running, rate, colorBy, livery, dirty: true })
+  }, [track, lap, baseline, running, rate, colorBy, livery])
 
   useEffect(() => {
     const map = mapRef.current
@@ -200,8 +209,9 @@ export function TrackStage({
       mapCtx.drawImage(mapLayer, 0, 0)
       const { track: tr, lap: lp } = s
       if (!tr || !lp) return
-      const n = tr.x.length
-      if (s.pos >= n) s.pos = 0
+      // a lap and a track from different circuits can meet for a frame while one loads
+      const n = Math.min(tr.x.length, lp.v.length)
+      if (!(s.pos >= 0) || s.pos >= n) s.pos = 0
       const i = Math.floor(s.pos)
       const j = (i + 1) % n
       const f = s.pos - i
@@ -218,13 +228,19 @@ export function TrackStage({
       mapCtx.beginPath()
       mapCtx.arc(x, y, r * 2.1, 0, Math.PI * 2)
       mapCtx.fill()
-      mapCtx.fillStyle = "#ecedf0"
-      mapCtx.strokeStyle = "#0b0c0f"
-      mapCtx.lineWidth = r * 0.35
+      // the car wears its livery: paint in the middle, accent as the ring
+      mapCtx.fillStyle = "#0b0c0f"
+      mapCtx.beginPath()
+      mapCtx.arc(x, y, r * 1.25, 0, Math.PI * 2)
+      mapCtx.fill()
+      mapCtx.fillStyle = s.livery.accent
       mapCtx.beginPath()
       mapCtx.arc(x, y, r, 0, Math.PI * 2)
       mapCtx.fill()
-      mapCtx.stroke()
+      mapCtx.fillStyle = s.livery.paint
+      mapCtx.beginPath()
+      mapCtx.arc(x, y, r * 0.62, 0, Math.PI * 2)
+      mapCtx.fill()
 
       if (traceCtx && trace) {
         traceCtx.clearRect(0, 0, trace.width, trace.height)
@@ -312,30 +328,132 @@ export function TrackStage({
     </div>
   )
 
+  const delta = lap && baseline ? lap.lapTime - baseline.lapTime : 0
+  const neutral = Math.abs(delta) < 0.0005
+  const vsPole = lap ? ((lap.lapTime - info.pole) / info.pole) * 100 : 0
+
   return (
     <div className="flex h-full min-h-0 flex-col gap-3">
+      {/* Circuit picker: the first decision on this screen, so it sits on top of it */}
+      <div className="scroll-thin -mx-1 flex shrink-0 gap-1.5 overflow-x-auto px-1 pb-1" role="tablist" aria-label="Circuit">
+        {TRACKS.map((t) => (
+          <button
+            key={t.id}
+            role="tab"
+            aria-selected={t.id === info.id}
+            onClick={() => onTrack(t.id)}
+            className={cn(
+              "h-8 shrink-0 rounded-lg border px-2.5 text-[12px] font-medium whitespace-nowrap transition-colors",
+              t.id === info.id ? "border-transparent bg-ink text-bg" : "border-line-strong bg-white/5 text-ink-2 hover:bg-white/10 hover:text-ink",
+            )}
+          >
+            {t.name}
+          </button>
+        ))}
+      </div>
+
       <div className="relative min-h-0 flex-1">
         <canvas ref={mapRef} className="absolute inset-0 size-full" aria-label={`Racing line at ${info.name}, coloured by ${colorBy}`} role="img" />
         {!track && <div className="absolute inset-0 grid place-items-center text-xs text-ink-3">Loading circuit…</div>}
-        <div className="pointer-events-none absolute top-0 left-0">
-          <div className="text-[15px] font-semibold tracking-tight">{info.name}</div>
+
+        <div className="pointer-events-none absolute top-0 left-0 max-w-[46%]">
+          <div className={cn("font-semibold tracking-tight", compact ? "text-[15px]" : "text-[22px]")}>{info.name}</div>
           <div className="text-[11.5px] text-ink-3">
-            {info.place} · {info.length.toFixed(3)} km · {fmt(info.altitude)} m
+            {info.place}, {info.length.toFixed(3)} km, {fmt(info.altitude)} m above sea level
           </div>
+          {!compact && <p className="mt-2 max-w-[250px] text-[12px] leading-snug text-ink-2">{info.note}</p>}
         </div>
-        <MapLegend colorBy={colorBy} className="absolute right-0 bottom-0" />
-      </div>
-      {readouts}
-      {/* always mounted so the animation keeps its canvas when the layout changes; phones just hide it */}
-      {(
-        <div className={cn("panel px-3 pt-2.5 pb-2", compact && "hidden")}>
-          <div className="mb-1.5 flex items-baseline justify-between">
-            <span className="label-xs">Speed over the lap</span>
-            <span className="text-[10.5px] text-ink-3">dashed: baseline setup · shaded: flap open</span>
+
+        {/* The answer to "what did my change do": lap time and the gap to the baseline */}
+        <div className="pointer-events-none absolute top-0 right-0 text-right">
+          <div className={cn("tabular leading-none font-medium tracking-tight text-ink", compact ? "text-[28px]" : "text-[52px]")}>
+            {lap ? formatLap(lap.lapTime) : "–:––.–––"}
           </div>
-          <canvas ref={traceRef} className="block h-[104px] w-full" aria-hidden="true" />
+          <div className={cn("tabular mt-1.5 font-medium", compact ? "text-[12px]" : "text-[15px]", neutral ? "text-ink-3" : delta < 0 ? "text-emerald-400" : "text-accent-hover")}>
+            {neutral ? "baseline setup" : `${delta > 0 ? "+" : "−"}${Math.abs(delta).toFixed(3)} s vs baseline`}
+          </div>
+          {lap && !compact && (
+            <div className="tabular mt-1 text-[11.5px] text-ink-3">
+              2025 pole {formatLap(info.pole)}, {info.poleBy} ({vsPole > 0 ? "+" : "−"}
+              {Math.abs(vsPole).toFixed(1)}%)
+            </div>
+          )}
+        </div>
+
+        <div className="absolute bottom-0 left-0 flex flex-wrap items-center gap-2">
+          <Segmented<ColorBy>
+            className="panel !rounded-xl"
+            size="sm"
+            value={colorBy}
+            onChange={onColorBy}
+            options={[
+              { value: "speed", label: "Colour by speed" },
+              { value: "limit", label: "by limit" },
+            ]}
+          />
+          <Segmented
+            className="panel !rounded-xl"
+            size="sm"
+            value={String(rate)}
+            onChange={(r) => onRate(Number(r))}
+            options={[
+              { value: "1", label: "Real time" },
+              { value: "4", label: "4×" },
+              { value: "12", label: "12×" },
+            ]}
+          />
+        </div>
+        {!compact && <MapLegend colorBy={colorBy} className="absolute right-0 bottom-0" />}
+      </div>
+
+      <div className={cn("grid shrink-0 gap-3", !compact && "grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]")}>
+        {readouts}
+        {!compact && lap && (
+          <div className="panel grid grid-cols-3 gap-x-4 gap-y-2.5 px-4 py-3">
+            <Stat label="Top speed" value={fmt(lap.topSpeed)} unit="km/h" />
+            <Stat label="Slowest corner" value={fmt(lap.minSpeed)} unit="km/h" />
+            <Stat label="Full throttle" value={fmt(lap.fullThrottle * 100)} unit="%" />
+            <Stat label="Peak lateral" value={fmt(lap.maxLateralG, 1)} unit="g" />
+            <Stat label="Peak braking" value={fmt(lap.maxBrakingG, 1)} unit="g" />
+            <Stat
+              label="Limiting axle"
+              value={lap.understeer >= lap.oversteer ? "Front" : "Rear"}
+              unit={`${Math.max(lap.understeer, lap.oversteer)}/${lap.understeer + lap.oversteer} corners`}
+            />
+          </div>
+        )}
+      </div>
+
+      {!compact && lap && lap.stallShare > 0.03 && (
+        <div className="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-2.5 py-2 text-[11.5px] text-warn">
+          <AlertTriangle className="mt-px size-3.5 shrink-0" />
+          <span>
+            In fast corners the aero load squashes the floor below 24 mm ({fmt(lap.stallShare * 100)}% of the lap). It stalls there and gives
+            downforce away exactly when you need it: raise the ride height.
+          </span>
         </div>
       )}
+
+      {/* always mounted so the animation keeps its canvas when the layout changes; phones just hide it */}
+      <div className={cn("panel shrink-0 px-3 pt-2.5 pb-2", compact && "hidden")}>
+        <div className="mb-1.5 flex items-baseline justify-between">
+          <span className="text-[11.5px] text-ink-2">Speed over the lap</span>
+          <span className="text-[10.5px] text-ink-3">dashed line: baseline setup. Shaded: flap open</span>
+        </div>
+        <canvas ref={traceRef} className="block h-[76px] w-full" aria-hidden="true" />
+      </div>
+    </div>
+  )
+}
+
+function Stat({ label, value, unit }: { label: string; value: string; unit?: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="truncate text-[11px] text-ink-3">{label}</div>
+      <div className="mt-1 flex items-baseline gap-1">
+        <span className="tabular text-[17px] leading-none font-medium text-ink">{value}</span>
+        {unit && <span className="tabular truncate text-[10.5px] text-ink-3">{unit}</span>}
+      </div>
     </div>
   )
 }
@@ -448,7 +566,7 @@ export function LapPanel({ lap, baseline, info }: { lap: LapResult | null; basel
         . The model is a flat-track, constant-power approximation; trust the differences between setups more than the absolute time.
       </p>
 
-      {lap.stallShare > 0.01 && (
+      {lap.stallShare > 0.03 && (
         <div className="flex items-start gap-2 rounded-md border border-warn/30 bg-warn/10 px-2.5 py-2 text-[11.5px] text-warn">
           <AlertTriangle className="mt-px size-3.5 shrink-0" />
           <span>
@@ -481,80 +599,37 @@ function Field({ label, value, unit, min, max, step, onChange, hint }: { label: 
 }
 
 export function TrackSetupPanel({
-  trackId,
-  onTrack,
   spec,
   onSpec,
-  colorBy,
-  onColorBy,
-  rate,
-  onRate,
   onReset,
   onOptimise,
   optimising,
 }: {
-  trackId: string
-  onTrack: (id: string) => void
   spec: CarSpec
   onSpec: (patch: Partial<CarSpec>) => void
-  colorBy: ColorBy
-  onColorBy: (c: ColorBy) => void
-  rate: number
-  onRate: (r: number) => void
   onReset: () => void
   onOptimise: () => void
   optimising: boolean
 }) {
-  const info = TRACKS.find((t) => t.id === trackId)!
   return (
     <div>
-      <section className="space-y-3 px-4 py-4">
+      <section className="space-y-3.5 px-4 py-4">
         <div className="flex items-center justify-between">
-          <h3 className="label-xs">Circuit</h3>
+          <h3 className="label-xs">Car</h3>
           <button onClick={onReset} className="flex items-center gap-1 text-[11px] text-ink-3 hover:text-ink-2">
-            <RotateCcw className="size-3" /> Reset car
+            <RotateCcw className="size-3" /> Reset
           </button>
         </div>
-        <select
-          value={trackId}
-          onChange={(e) => onTrack(e.target.value)}
-          aria-label="Circuit"
-          className="h-9 w-full rounded-lg border border-line-strong bg-black/30 px-2.5 text-[13px] text-ink"
+        <button
+          onClick={onOptimise}
+          disabled={optimising}
+          className="flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-accent text-xs font-medium text-white transition-colors hover:bg-accent-hover disabled:opacity-60"
         >
-          {TRACKS.map((t) => (
-            <option key={t.id} value={t.id}>
-              {t.name} · {t.place}
-            </option>
-          ))}
-        </select>
-        <p className="text-[11.5px] leading-snug text-ink-3">{info.note}</p>
-        <div className="grid grid-cols-2 gap-2">
-          <Segmented<ColorBy>
-            size="sm"
-            value={colorBy}
-            onChange={onColorBy}
-            options={[
-              { value: "speed", label: "Speed" },
-              { value: "limit", label: "Limit" },
-            ]}
-          />
-          <Segmented
-            size="sm"
-            value={String(rate)}
-            onChange={(r) => onRate(Number(r))}
-            options={[
-              { value: "1", label: "1×" },
-              { value: "4", label: "4×" },
-              { value: "12", label: "12×" },
-            ]}
-          />
-        </div>
-      </section>
-
-      <section className="space-y-3.5 border-t border-line px-4 py-4">
-        <h3 className="label-xs">Car</h3>
-        <Field label="Power" value={spec.power} unit={`kW · ${Math.round(spec.power * 1.341)} hp`} min={450} max={800} step={5} onChange={(power) => onSpec({ power })} hint="Peak power-unit output" />
-        <Field label="Car + driver" value={spec.mass} unit="kg" min={720} max={900} step={2} onChange={(mass) => onSpec({ mass })} hint="2025 minimum was 800 kg" />
+          <Sparkles className="size-3.5" />
+          {optimising ? "Searching…" : "Find the fastest wing angles here"}
+        </button>
+        <Field label="Power" value={spec.power} unit={`kW (${Math.round(spec.power * 1.341)} hp)`} min={450} max={800} step={5} onChange={(power) => onSpec({ power })} hint="Peak power-unit output" />
+        <Field label="Car and driver" value={spec.mass} unit="kg" min={720} max={900} step={2} onChange={(mass) => onSpec({ mass })} hint="2025 minimum was 800 kg" />
         <Field label="Fuel" value={spec.fuel} unit="kg" min={0} max={110} step={1} onChange={(fuel) => onSpec({ fuel })} hint="A race start is about 100 kg; qualifying a few kilos" />
         <div className="space-y-1.5">
           <span className="text-[12.5px] text-ink-2">Tyre compound</span>
@@ -583,14 +658,6 @@ export function TrackSetupPanel({
             ]}
           />
         </div>
-        <button
-          onClick={onOptimise}
-          disabled={optimising}
-          className="flex h-8 w-full items-center justify-center gap-1.5 rounded-lg border border-line-strong bg-white/5 text-xs font-medium text-ink transition-colors hover:bg-white/10 disabled:opacity-50"
-        >
-          <Sparkles className="size-3.5" />
-          {optimising ? "Searching…" : "Find the fastest wing angles"}
-        </button>
       </section>
     </div>
   )

@@ -8,6 +8,7 @@ import { SPEED_RANGE, turbo } from "@/lib/flow-field"
 import { CP_RANGE } from "@/components/sim/materials"
 import type { FlowMode } from "@/components/sim/flow"
 import { PART_BY_ID, PARTS, type PartId } from "@/lib/parts"
+import { LIVERIES } from "@/lib/liveries"
 
 export interface VisualSettings {
   flow: FlowMode
@@ -109,6 +110,8 @@ export function SetupPanel({
   visual,
   onVisualChange,
   context = "tunnel",
+  livery,
+  onLivery,
 }: {
   config: AeroConfig
   onChange: (patch: Partial<AeroConfig>) => void
@@ -117,6 +120,8 @@ export function SetupPanel({
   onVisualChange: (patch: Partial<VisualSettings>) => void
   /** On track the air speed, yaw and flap state come from the lap, so those controls are hidden */
   context?: "tunnel" | "track"
+  livery: string
+  onLivery: (id: string) => void
 }) {
   const tunnel = context === "tunnel"
   return (
@@ -201,6 +206,26 @@ export function SetupPanel({
           />
         </div>
         )}
+      </Section>
+
+      <Section title="Livery" aside={<span className="text-[11px] text-ink-3">{LIVERIES.find((l) => l.id === livery)?.name}</span>}>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Livery">
+          {LIVERIES.map((l) => (
+            <button
+              key={l.id}
+              role="radio"
+              aria-checked={l.id === livery}
+              aria-label={l.name}
+              title={l.name}
+              onClick={() => onLivery(l.id)}
+              className={cn(
+                "size-7 overflow-hidden rounded-md border-2 transition-transform hover:scale-110",
+                l.id === livery ? "border-ink" : "border-transparent",
+              )}
+              style={{ background: `linear-gradient(135deg, ${l.paint} 0 62%, ${l.accent} 62% 100%)` }}
+            />
+          ))}
+        </div>
       </Section>
 
       {tunnel && (

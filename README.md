@@ -4,9 +4,15 @@ Put a Formula 1 car in a wind tunnel, then take the same setup out on track.
 
 **→ [f1-aero-sim.jonymusky.com](https://f1-aero-sim.jonymusky.com)**
 
+The entry screen plays a one-minute tour of every feature (`public/tour.mp4`). It is recorded from the real app by a script, so it can be regenerated after a UI change: `npm run build && sh scripts/record-tour.sh` (needs `agent-browser` and `ffmpeg`).
+
+Direct links: `/#tunnel`, `/#track`, `/#track=monza`.
+
 ## Tunnel
 
 Change wing angles, ride height, rake and yaw and watch streamlines, smoke, surface pressure and the forces respond. The aero model (`lib/aero.ts`) is a set of smooth fits tuned to publicly reported ranges, not CFD.
+
+The car can wear the colours of any 2025 team (`lib/liveries.ts`): colours only, no logos or sponsors.
 
 ## Track
 
@@ -34,7 +40,7 @@ One set of constants for every circuit, calibrated against the 2025 pole laps (`
 | Circuit | 2025 pole | Simulated | Error |
 | --- | --- | --- | --- |
 | Monza | 1:18.792 | 1:20.278 | +1.9% |
-| Spa-Francorchamps | 1:40.562 | 1:43.119 | +2.5% |
+| Spa | 1:40.562 | 1:43.119 | +2.5% |
 | Silverstone | 1:24.892 | 1:26.242 | +1.6% |
 | Suzuka | 1:26.983 | 1:26.690 | −0.3% |
 | Hungaroring | 1:15.372 | 1:16.573 | +1.6% |

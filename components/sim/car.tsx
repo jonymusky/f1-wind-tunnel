@@ -22,6 +22,9 @@ export interface CarPose {
   pressure: boolean
   floorLoad: number
   wingLoad: number
+  /** Paint colours, hex */
+  paint: string
+  accent: string
 }
 
 interface CarProps {
@@ -457,6 +460,10 @@ export default function F1Car({ pose, flowSpeedRef, explode, selected, hovered, 
   const explodeAmt = useRef(0)
 
   const p = pose
+  useEffect(() => {
+    mats.paint.color.set(p.paint)
+    mats.accent.color.set(p.accent)
+  }, [mats, p.paint, p.accent])
   const body = p.pressure ? mats.pressureBody : mats.paint
   const trim = p.pressure ? mats.pressureBody : mats.carbon
   const accent = p.pressure ? mats.pressureBody : mats.accent

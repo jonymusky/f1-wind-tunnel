@@ -5,7 +5,9 @@
 // 2× the car's weight in downforce at 300 km/h. It's a teaching model,
 // not CFD — each component is a smooth fit, not a solved flow.
 
-export type AeroMode = "corner" | "straight"
+// "corner": everything closed, full load. "straight": 2026-style active aero,
+// front and rear flaps open. "drs": 2011–2025 drag reduction, rear flap only.
+export type AeroMode = "corner" | "straight" | "drs"
 
 export interface AeroConfig {
   /** Free-stream speed, km/h */
@@ -99,6 +101,9 @@ export function computeAero(cfg: AeroConfig): AeroResult {
   if (straight) {
     frontWing *= 0.55
     rearWing *= 0.3
+  } else if (cfg.mode === "drs") {
+    // only the upper flap opens; the main plane and beam wing keep working
+    rearWing *= 0.6
   }
 
   // Yaw costs downforce as the floor edges and wings see crossflow
@@ -108,8 +113,10 @@ export function computeAero(cfg: AeroConfig): AeroResult {
   // Drag: wheels/body baseline plus induced drag from each lifting surface
   const cdBody = 0.6
   const cdFloor = 0.07 * floor
-  const cdFront = 0.04 + 0.09 * frontWing ** 2
-  const cdRear = 0.05 + 0.17 * rearWing ** 2
+  // A stalled wing loses lift but its separated wake costs drag, so past the
+  // stall angle drag keeps rising instead of following the lift down
+  const cdFront = 0.04 + 0.09 * frontWing ** 2 + 0.012 * Math.max(0, cfg.frontWing - 26)
+  const cdRear = 0.05 + 0.17 * rearWing ** 2 + 0.02 * Math.max(0, cfg.rearWing - 32)
   const cdA = (cdBody + cdFloor + cdFront + cdRear) * (1 + 0.004 * cfg.yaw ** 2)
 
   const v = cfg.speed / 3.6

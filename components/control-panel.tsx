@@ -8,6 +8,7 @@ import { SPEED_RANGE, turbo } from "@/lib/flow-field"
 import { CP_RANGE } from "@/components/sim/materials"
 import type { FlowMode } from "@/components/sim/flow"
 import { PART_BY_ID, PARTS, type PartId } from "@/lib/parts"
+import { LIVERIES } from "@/lib/liveries"
 
 export interface VisualSettings {
   flow: FlowMode
@@ -108,15 +109,24 @@ export function SetupPanel({
   onReset,
   visual,
   onVisualChange,
+  context = "tunnel",
+  livery,
+  onLivery,
 }: {
   config: AeroConfig
   onChange: (patch: Partial<AeroConfig>) => void
   onReset: () => void
   visual: VisualSettings
   onVisualChange: (patch: Partial<VisualSettings>) => void
+  /** On track the air speed, yaw and flap state come from the lap, so those controls are hidden */
+  context?: "tunnel" | "track"
+  livery: string
+  onLivery: (id: string) => void
 }) {
+  const tunnel = context === "tunnel"
   return (
     <div>
+      {tunnel && (
       <Section
         title="Tunnel"
         aside={
@@ -138,6 +148,7 @@ export function SetupPanel({
           onChange={(v) => onChange({ yaw: v })}
         />
       </Section>
+      )}
 
       <Section title="Car setup">
         <Param
@@ -160,7 +171,7 @@ export function SetupPanel({
         />
         <Param
           label="Ride height"
-          hint="Floor height above the road. Lower = more ground effect, until the floor stalls"
+          hint={tunnel ? "Floor height above the road. Lower = more ground effect, until the floor stalls" : "Static ride height. Aero load presses the car down from here as speed builds"}
           value={config.rideHeight}
           unit="mm"
           min={14}
@@ -179,6 +190,7 @@ export function SetupPanel({
           step={0.1}
           onChange={(v) => onChange({ rake: v })}
         />
+        {tunnel && (
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between">
             <span className="text-[12.5px] text-ink-2">Active aero</span>
@@ -193,8 +205,30 @@ export function SetupPanel({
             ]}
           />
         </div>
+        )}
       </Section>
 
+      <Section title="Livery" aside={<span className="text-[11px] text-ink-3">{LIVERIES.find((l) => l.id === livery)?.name}</span>}>
+        <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Livery">
+          {LIVERIES.map((l) => (
+            <button
+              key={l.id}
+              role="radio"
+              aria-checked={l.id === livery}
+              aria-label={l.name}
+              title={l.name}
+              onClick={() => onLivery(l.id)}
+              className={cn(
+                "size-7 overflow-hidden rounded-md border-2 transition-transform hover:scale-110",
+                l.id === livery ? "border-ink" : "border-transparent",
+              )}
+              style={{ background: `linear-gradient(135deg, ${l.paint} 0 62%, ${l.accent} 62% 100%)` }}
+            />
+          ))}
+        </div>
+      </Section>
+
+      {tunnel && (
       <Section title="Visualisation">
         <Segmented
           value={visual.flow}
@@ -237,6 +271,7 @@ export function SetupPanel({
           </button>
         </label>
       </Section>
+      )}
     </div>
   )
 }

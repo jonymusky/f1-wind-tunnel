@@ -108,15 +108,20 @@ export function SetupPanel({
   onReset,
   visual,
   onVisualChange,
+  context = "tunnel",
 }: {
   config: AeroConfig
   onChange: (patch: Partial<AeroConfig>) => void
   onReset: () => void
   visual: VisualSettings
   onVisualChange: (patch: Partial<VisualSettings>) => void
+  /** On track the air speed, yaw and flap state come from the lap, so those controls are hidden */
+  context?: "tunnel" | "track"
 }) {
+  const tunnel = context === "tunnel"
   return (
     <div>
+      {tunnel && (
       <Section
         title="Tunnel"
         aside={
@@ -138,6 +143,7 @@ export function SetupPanel({
           onChange={(v) => onChange({ yaw: v })}
         />
       </Section>
+      )}
 
       <Section title="Car setup">
         <Param
@@ -160,7 +166,7 @@ export function SetupPanel({
         />
         <Param
           label="Ride height"
-          hint="Floor height above the road. Lower = more ground effect, until the floor stalls"
+          hint={tunnel ? "Floor height above the road. Lower = more ground effect, until the floor stalls" : "Static ride height. Aero load presses the car down from here as speed builds"}
           value={config.rideHeight}
           unit="mm"
           min={14}
@@ -179,6 +185,7 @@ export function SetupPanel({
           step={0.1}
           onChange={(v) => onChange({ rake: v })}
         />
+        {tunnel && (
         <div className="space-y-1.5">
           <div className="flex items-baseline justify-between">
             <span className="text-[12.5px] text-ink-2">Active aero</span>
@@ -193,8 +200,10 @@ export function SetupPanel({
             ]}
           />
         </div>
+        )}
       </Section>
 
+      {tunnel && (
       <Section title="Visualisation">
         <Segmented
           value={visual.flow}
@@ -237,6 +246,7 @@ export function SetupPanel({
           </button>
         </label>
       </Section>
+      )}
     </div>
   )
 }

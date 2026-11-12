@@ -5,7 +5,9 @@
 // 2× the car's weight in downforce at 300 km/h. It's a teaching model,
 // not CFD — each component is a smooth fit, not a solved flow.
 
-export type AeroMode = "corner" | "straight"
+// "corner": everything closed, full load. "straight": 2026-style active aero,
+// front and rear flaps open. "drs": 2011–2025 drag reduction, rear flap only.
+export type AeroMode = "corner" | "straight" | "drs"
 
 export interface AeroConfig {
   /** Free-stream speed, km/h */
@@ -98,6 +100,8 @@ export function computeAero(cfg: AeroConfig): AeroResult {
   let rearWing = (0.28 + 0.05 * cfg.rearWing) * wingStall(cfg.rearWing, 32)
   if (straight) {
     frontWing *= 0.55
+    rearWing *= 0.3
+  } else if (cfg.mode === "drs") {
     rearWing *= 0.3
   }
 

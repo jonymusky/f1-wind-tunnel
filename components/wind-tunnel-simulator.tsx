@@ -3,6 +3,9 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Boxes, ChevronDown, Pause, Play } from "lucide-react"
+import { LapPanel, TrackSetupPanel, TrackStage, type ColorBy } from "@/components/track/track-mode"
+import { DEFAULT_SPEC, formatLap, simulateLap, type CarSpec, type Setup, type TrackGeometry } from "@/lib/lap/sim"
+import { loadTrack, TRACK_BY_ID } from "@/lib/tracks"
 import Scene, { type CameraView } from "@/components/sim/scene"
 import type { FlowState } from "@/components/sim/flow"
 import type { CarPose } from "@/components/sim/car"
@@ -44,6 +47,51 @@ export default function WindTunnelSimulator() {
   const [hovered, setHovered] = useState<PartId | null>(null)
   const exploded = explode > 0
   const partsMode = exploded || selected !== null
+
+  // Track mode: the same car, driven around a circuit by the lap simulator
+  const [place, setPlace] = useState<"tunnel" | "track">("tunnel")
+  const onTrack = place === "track"
+  const [trackId, setTrackId] = useState("silverstone")
+  const [spec, setSpec] = useState<CarSpec>(DEFAULT_SPEC)
+  const [colorBy, setColorBy] = useState<ColorBy>("speed")
+  const [rate, setRate] = useState(1)
+  const [geometry, setGeometry] = useState<{ id: string; track: TrackGeometry } | null>(null)
+  const [optimising, setOptimising] = useState(false)
+  const trackInfo = TRACK_BY_ID[trackId]
+  useEffect(() => {
+    if (!onTrack) return
+    let live = true
+    loadTrack(trackId).then((track) => live && setGeometry({ id: trackId, track }))
+    return () => {
+      live = false
+    }
+  }, [onTrack, trackId])
+  const track = geometry?.id === trackId ? geometry.track : null
+  const carSetup: Setup = useMemo(
+    () => ({ frontWing: config.frontWing, rearWing: config.rearWing, rideHeight: config.rideHeight, rake: config.rake }),
+    [config.frontWing, config.rearWing, config.rideHeight, config.rake],
+  )
+  const lap = useMemo(() => (track ? simulateLap(track, carSetup, spec, trackInfo.altitude) : null), [track, carSetup, spec, trackInfo.altitude])
+  const baseline = useMemo(
+    () => (track ? simulateLap(track, { frontWing: DEFAULT_CONFIG.frontWing, rearWing: DEFAULT_CONFIG.rearWing, rideHeight: DEFAULT_CONFIG.rideHeight, rake: DEFAULT_CONFIG.rake }, DEFAULT_SPEC, trackInfo.altitude) : null),
+    [track, trackInfo.altitude],
+  )
+  const optimise = () => {
+    if (!track) return
+    setOptimising(true)
+    // a couple of hundred laps: defer so the button can show its busy state first
+    setTimeout(() => {
+      let best = { time: Infinity, frontWing: config.frontWing, rearWing: config.rearWing }
+      for (let rearWing = 6; rearWing <= 36; rearWing += 2) {
+        for (let frontWing = 4; frontWing <= 30; frontWing += 2) {
+          const time = simulateLap(track, { ...carSetup, frontWing, rearWing }, spec, trackInfo.altitude).lapTime
+          if (time < best.time) best = { time, frontWing, rearWing }
+        }
+      }
+      setConfig((c) => ({ ...c, frontWing: best.frontWing, rearWing: best.rearWing }))
+      setOptimising(false)
+    }, 30)
+  }
 
   const toggleExplode = () => {
     setExplode((e) => (e > 0 ? 0 : 0.8))
@@ -109,13 +157,15 @@ export default function WindTunnelSimulator() {
   // Keyboard: space = run/pause, 1–6 = camera views
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.target instanceof HTMLInputElement || e.metaKey || e.ctrlKey) return
-      if (e.key === "e" || e.key === "E") toggleExplode()
-      if (e.key === "Escape") setSelected(null)
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.metaKey || e.ctrlKey) return
       if (e.code === "Space" && !(e.target instanceof HTMLButtonElement)) {
         e.preventDefault()
         setRunning((r) => !r)
       }
+      // the rest are tunnel shortcuts: exploded view and camera
+      if (onTrack) return
+      if (e.key === "e" || e.key === "E") toggleExplode()
+      if (e.key === "Escape") setSelected(null)
       const n = Number(e.key)
       if (n >= 1 && n <= VIEW_OPTIONS.length) setView(VIEW_OPTIONS[n - 1].value)
     }
@@ -126,10 +176,52 @@ export default function WindTunnelSimulator() {
   const patch = (p: Partial<AeroConfig>) => setConfig((c) => ({ ...c, ...p }))
   const patchVisual = (p: Partial<VisualSettings>) => setVisual((v) => ({ ...v, ...p }))
 
-  const setup = (
+  const setup = onTrack ? (
+    <>
+      <TrackSetupPanel
+        trackId={trackId}
+        onTrack={setTrackId}
+        spec={spec}
+        onSpec={(p) => setSpec((sp) => ({ ...sp, ...p }))}
+        colorBy={colorBy}
+        onColorBy={setColorBy}
+        rate={rate}
+        onRate={setRate}
+        onReset={() => {
+          setSpec(DEFAULT_SPEC)
+          setConfig(DEFAULT_CONFIG)
+        }}
+        onOptimise={optimise}
+        optimising={optimising}
+      />
+      <div className="border-t border-line">
+        <SetupPanel config={config} onChange={patch} onReset={() => setConfig(DEFAULT_CONFIG)} visual={visual} onVisualChange={patchVisual} context="track" />
+      </div>
+    </>
+  ) : (
     <SetupPanel config={config} onChange={patch} onReset={() => setConfig(DEFAULT_CONFIG)} visual={visual} onVisualChange={patchVisual} />
   )
-  const telemetry = <TelemetryPanel aero={aero} config={config} />
+  const telemetry = onTrack ? <LapPanel lap={lap} baseline={baseline} info={trackInfo} /> : <TelemetryPanel aero={aero} config={config} />
+  const stage = <TrackStage track={track} lap={lap} baseline={baseline} info={trackInfo} running={running} rate={rate} colorBy={colorBy} compact={isMobile} />
+  const placeSwitch = (
+    <Segmented
+      className="panel pointer-events-auto !rounded-xl"
+      size="sm"
+      value={place}
+      onChange={(p) => {
+        setPlace(p)
+        if (p === "track") {
+          setExplode(0)
+          setSelected(null)
+          if (sheet === "parts") setSheet("data")
+        }
+      }}
+      options={[
+        { value: "tunnel", label: "Tunnel" },
+        { value: "track", label: "Track" },
+      ]}
+    />
+  )
   const parts = (
     <PartsPanel aero={aero} config={config} selected={selected} hovered={hovered} onSelect={selectPart} onHover={setHovered} />
   )
@@ -164,6 +256,13 @@ export default function WindTunnelSimulator() {
 
   return (
     <div className="relative h-dvh w-full overflow-hidden bg-bg">
+      {onTrack && (
+        <div className={cn("absolute z-0", isMobile ? "inset-x-3 top-[104px] bottom-[76px]" : "top-16 right-[332px] bottom-4 left-4 flex gap-3")}>
+          {!isMobile && <div className="panel scroll-thin w-[340px] shrink-0 overflow-y-auto">{telemetry}</div>}
+          <div className="h-full min-w-0 flex-1">{stage}</div>
+        </div>
+      )}
+      {!onTrack && (
       <div className="absolute inset-0">
         <Scene
           pose={pose}
@@ -178,6 +277,7 @@ export default function WindTunnelSimulator() {
           onHover={setHovered}
         />
       </div>
+      )}
 
       {/* Top bar */}
       <header className="pointer-events-none absolute inset-x-0 top-0 z-10 flex items-start justify-between gap-3 p-3 md:p-4">
@@ -189,12 +289,15 @@ export default function WindTunnelSimulator() {
           </div>
           <div className="leading-tight">
             <div className="text-[13px] font-semibold tracking-tight">AeroSim</div>
-            <div className="text-[11px] text-ink-3">Wind tunnel · test section 1</div>
+            <div className="text-[11px] text-ink-3">{onTrack ? `Track · ${trackInfo.name}` : "Wind tunnel · test section 1"}</div>
           </div>
         </div>
 
         {!isMobile && (
-          <Segmented className="panel pointer-events-auto !rounded-xl" size="sm" value={view} onChange={setView} options={VIEW_OPTIONS} />
+          <div className="flex items-center gap-2">
+            {placeSwitch}
+            {!onTrack && <Segmented className="panel pointer-events-auto !rounded-xl" size="sm" value={view} onChange={setView} options={VIEW_OPTIONS} />}
+          </div>
         )}
 
         <div className="pointer-events-auto flex items-center gap-2">
@@ -203,22 +306,24 @@ export default function WindTunnelSimulator() {
             <span className="tabular text-[11.5px] text-ink-2">
               {running ? "RUN" : "HOLD"} {formatClock(runTime)}
             </span>
-            <span className="tabular text-[11.5px] text-ink-3">· {config.speed} km/h</span>
+            <span className="tabular text-[11.5px] text-ink-3">· {onTrack ? (lap ? formatLap(lap.lapTime) : "…") : `${config.speed} km/h`}</span>
           </div>
-          {explodeButton}
+          {!onTrack && explodeButton}
           {runButton}
         </div>
       </header>
 
+      {isMobile && <div className="absolute inset-x-3 top-14 z-10 flex">{placeSwitch}</div>}
+
       {isMobile ? (
         /* Mobile: one bottom sheet with Data / Setup tabs */
         <div className="absolute inset-x-0 bottom-0 z-10 p-2">
-          {!sheetOpen && !exploded && (
+          {!sheetOpen && !exploded && !onTrack && (
             <div className="mb-2">
               <Legend visual={visual} />
             </div>
           )}
-          <div className="panel overflow-hidden !rounded-2xl">
+          <div className={cn("panel overflow-hidden !rounded-2xl", onTrack && "!bg-panel-solid")}>
             <div className="flex items-center gap-2 p-2">
               <Segmented
                 className="flex-1"
@@ -228,11 +333,18 @@ export default function WindTunnelSimulator() {
                   setSheet(s)
                   setSheetOpen(true)
                 }}
-                options={[
-                  { value: "data", label: `Data · ${Math.round(toKgf(aero.downforce)).toLocaleString("en-US")} kgf` },
-                  { value: "setup", label: "Setup" },
-                  { value: "parts", label: "Parts" },
-                ]}
+                options={
+                  onTrack
+                    ? [
+                        { value: "data", label: `Lap · ${lap ? formatLap(lap.lapTime) : "…"}` },
+                        { value: "setup", label: "Car & circuit" },
+                      ]
+                    : [
+                        { value: "data", label: `Data · ${Math.round(toKgf(aero.downforce)).toLocaleString("en-US")} kgf` },
+                        { value: "setup", label: "Setup" },
+                        { value: "parts", label: "Parts" },
+                      ]
+                }
               />
               <button
                 onClick={() => setSheetOpen((o) => !o)}
@@ -245,7 +357,7 @@ export default function WindTunnelSimulator() {
             {sheetOpen && (
               <div className="scroll-thin max-h-[42dvh] overflow-y-auto border-t border-line">
                 {sheet === "data" ? telemetry : sheet === "setup" ? setup : parts}
-                {sheet === "setup" && (
+                {sheet === "setup" && !onTrack && (
                   <div className="border-t border-line p-4">
                     <div className="label-xs mb-3">Camera</div>
                     <Segmented size="sm" value={view} onChange={setView} options={VIEW_OPTIONS} />
@@ -258,7 +370,7 @@ export default function WindTunnelSimulator() {
       ) : (
         <>
           <aside className="panel scroll-thin absolute top-16 right-4 bottom-4 z-10 w-[300px] overflow-y-auto">
-            {partsMode ? (
+            {partsMode && !onTrack ? (
               <>
                 {parts}
                 <div className="border-t border-line px-4 py-3">
@@ -277,10 +389,12 @@ export default function WindTunnelSimulator() {
               setup
             )}
           </aside>
-          <div className="absolute bottom-4 left-4 z-10 flex items-end gap-3">
-            <div className="panel w-[340px]">{telemetry}</div>
-            {!exploded && <Legend visual={visual} />}
-          </div>
+          {!onTrack && (
+            <div className="absolute bottom-4 left-4 z-10 flex items-end gap-3">
+              <div className="panel w-[340px]">{telemetry}</div>
+              {!exploded && <Legend visual={visual} />}
+            </div>
+          )}
         </>
       )}
 
@@ -325,7 +439,7 @@ export default function WindTunnelSimulator() {
               </h1>
               <p className="mt-4 text-[15px] leading-relaxed text-ink-2">
                 Change wing angles, ride height, rake and yaw, and watch the airflow, surface pressure and forces respond.
-                The numbers are tuned to real F1 ranges — around two tonnes of downforce at 300 km/h.
+                Then take the same setup out on track and see what it does to the lap time at twelve Grand Prix circuits.
               </p>
               <div className="mt-7 flex items-center gap-4">
                 <button

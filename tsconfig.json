@@ -34,6 +34,7 @@
     "components/wind-tunnel-simulator.tsx",
     "components/control-panel.tsx",
     "components/sim/**/*",
+    "components/track/**/*",
     "components/ui/slider.tsx",
     "lib/**/*",
     "hooks/use-mobile.tsx",

@@ -140,16 +140,6 @@ export function TrackStage({
           g.lineTo(px(j), py(j))
           g.stroke()
         }
-        // start/finish tick
-        const nx = -(py(1) - py(0))
-        const ny = px(1) - px(0)
-        const nl = Math.hypot(nx, ny) || 1
-        g.strokeStyle = "#ecedf0"
-        g.lineWidth = Math.max(2, w * 0.45)
-        g.beginPath()
-        g.moveTo(px(0) - (nx / nl) * w * 2.4, py(0) - (ny / nl) * w * 2.4)
-        g.lineTo(px(0) + (nx / nl) * w * 2.4, py(0) + (ny / nl) * w * 2.4)
-        g.stroke()
       }
 
       if (trace) {
@@ -336,8 +326,9 @@ export function TrackStage({
         <MapLegend colorBy={colorBy} className="absolute right-0 bottom-0" />
       </div>
       {readouts}
-      {!compact && (
-        <div className="panel px-3 pt-2.5 pb-2">
+      {/* always mounted so the animation keeps its canvas when the layout changes; phones just hide it */}
+      {(
+        <div className={cn("panel px-3 pt-2.5 pb-2", compact && "hidden")}>
           <div className="mb-1.5 flex items-baseline justify-between">
             <span className="label-xs">Speed over the lap</span>
             <span className="text-[10.5px] text-ink-3">dashed: baseline setup · shaded: flap open</span>
@@ -410,13 +401,13 @@ export function LapPanel({ lap, baseline, info }: { lap: LapResult | null; basel
         </div>
       </div>
 
-      <div className="grid grid-cols-3 gap-x-4">
+      <div className="grid grid-cols-3 gap-x-4" title="The lap split into three equal distances, not the official timing sectors">
         {lap.sectors.map((s, i) => {
           const d = baseline ? s - baseline.sectors[i] : 0
           return (
             <Readout
               key={i}
-              label={`Sector ${i + 1}`}
+              label={`Split ${i + 1}`}
               value={s.toFixed(3)}
               unit="s"
               sub={Math.abs(d) < 0.0005 ? " " : `${d > 0 ? "+" : "−"}${Math.abs(d).toFixed(3)}`}
@@ -437,15 +428,15 @@ export function LapPanel({ lap, baseline, info }: { lap: LapResult | null; basel
       <div>
         <div className="flex items-baseline justify-between">
           <span className="label-xs">Which axle gives up first</span>
-          <span className="tabular text-[11px] text-ink-3">in corners</span>
+          <span className="tabular text-[11px] text-ink-3">{lap.understeer + lap.oversteer} corners</span>
         </div>
         <div className="mt-2 flex h-1.5 overflow-hidden rounded-full bg-line-strong">
-          <div style={{ width: `${(lap.understeer / Math.max(0.0001, lap.understeer + lap.oversteer)) * 100}%`, background: LIMIT_COLOR.front }} />
+          <div style={{ width: `${(lap.understeer / Math.max(1, lap.understeer + lap.oversteer)) * 100}%`, background: LIMIT_COLOR.front }} />
           <div className="flex-1" style={{ background: lap.oversteer > 0 ? LIMIT_COLOR.rear : "transparent" }} />
         </div>
         <div className="tabular mt-1 flex justify-between text-[10.5px] text-ink-3">
-          <span>front {fmt(lap.understeer * 100)}% · understeer</span>
-          <span>oversteer · rear {fmt(lap.oversteer * 100)}%</span>
+          <span>front in {lap.understeer} · understeer</span>
+          <span>oversteer · rear in {lap.oversteer}</span>
         </div>
       </div>
 

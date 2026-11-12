@@ -68,7 +68,7 @@ export interface LapResult {
   maxLateralG: number
   maxBrakingG: number
   fullThrottle: number
-  /** Share of the lap spent limited by the front / rear axle */
+  /** Corners where the front axle saturates first (understeer) and where the rear does (oversteer) */
   understeer: number
   oversteer: number
   /** Lowest running ride height, and whether the floor stalled in a corner */
@@ -142,11 +142,11 @@ function lookup(table: AeroPoint[], v: number): AeroPoint {
 }
 
 /** Runs of near-straight track long enough for the flaps to open. */
-export function straightZones(track: TrackGeometry): Uint8Array {
+export function straightZones(track: TrackGeometry, minLength = 200): Uint8Array {
   const n = track.k.length
   const zone = new Uint8Array(n)
   const gentle = (i: number) => Math.abs(track.k[i]) < 0.0011
-  const minRun = Math.round(200 / track.ds)
+  const minRun = Math.round(minLength / track.ds)
   // start scanning from a point that is not gentle so a run never straddles the seam
   let start = 0
   while (start < n && gentle(start)) start++
@@ -172,7 +172,8 @@ export function simulateLap(track: TrackGeometry, setup: Setup, spec: CarSpec, a
   const mu0 = PHYSICS.mu[spec.tyre]
   const cornerAero = aeroTable(setup, "corner", rho)
   const straightAero = spec.straightAero === "none" ? cornerAero : aeroTable(setup, spec.straightAero === "drs" ? "drs" : "straight", rho)
-  const zone = spec.straightAero === "none" ? new Uint8Array(n) : straightZones(track)
+  // DRS only on proper straights; active aero opens on any straight worth the name
+  const zone = spec.straightAero === "none" ? new Uint8Array(n) : straightZones(track, spec.straightAero === "drs" ? 400 : 200)
 
   const mu = (load: number) => mu0 * Math.pow(Math.max(load, 1) / FZ_REF, -PHYSICS.loadSensitivity)
 
@@ -290,6 +291,8 @@ export function simulateLap(track: TrackGeometry, setup: Setup, spec: CarSpec, a
   let fullThrottle = 0
   let under = 0
   let over = 0
+  let run = 0 // samples of the current corner limited by the front (+) or the rear (-)
+  let inCorner = false
   let stalled = 0
   let maxBrake = 0
   let maxLat = 0
@@ -322,8 +325,6 @@ export function simulateLap(track: TrackGeometry, setup: Setup, spec: CarSpec, a
       maxBrake = Math.max(maxBrake, -ax[i])
     } else if (cornering) {
       limit[i] = frontLimited[i] ? "front" : "rear"
-      if (frontLimited[i]) under++
-      else over++
       throttle[i] = Math.min(1, Math.max(0, (m * ax[i] + s.drag + s.rolling) / Math.max(1, d.engine)))
     } else {
       limit[i] = d.tractionLimited ? "traction" : "power"
@@ -331,6 +332,16 @@ export function simulateLap(track: TrackGeometry, setup: Setup, spec: CarSpec, a
       if (!d.tractionLimited) fullThrottle++
     }
     maxLat = Math.max(maxLat, Math.abs(ay[i]))
+    // one vote per corner: which axle was the limit for most of it
+    if (limit[i] === "front" || limit[i] === "rear") {
+      run += limit[i] === "front" ? 1 : -1
+      inCorner = true
+    } else if (inCorner && usage < 0.5) {
+      if (run >= 0) under++
+      else over++
+      run = 0
+      inCorner = false
+    }
   }
 
   let top = 0
@@ -360,8 +371,8 @@ export function simulateLap(track: TrackGeometry, setup: Setup, spec: CarSpec, a
     maxLateralG: maxLat / G,
     maxBrakingG: maxBrake / G,
     fullThrottle: fullThrottle / n,
-    understeer: under / n,
-    oversteer: over / n,
+    understeer: under,
+    oversteer: over,
     minRide,
     floorStalled: stalled > 0,
     stallShare: stalled / n,
